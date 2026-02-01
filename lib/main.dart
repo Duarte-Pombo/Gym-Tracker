@@ -43,12 +43,16 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
-  // Mock Data: Storing dates as a Set for O(1) lookup
-  // In the future, this will come from your local database
+  // --- MOCK DATA FOR ROUTINE ---
+  // In the real app, this comes from Hive
+  final List<String> _currentRoutine = ['Push', 'Pull', 'Legs', 'Rest'];
+  // The date the user STARTED this specific routine cycle.
+  // We use this to calculate the offset.
+  final DateTime _routineAnchorDate = DateTime(2023, 1, 1);
+
   final Set<DateTime> _trainedDays = {
     DateTime.now().subtract(const Duration(days: 1)),
     DateTime.now().subtract(const Duration(days: 3)),
-    DateTime.now().subtract(const Duration(days: 4)),
   };
 
   @override
@@ -62,39 +66,20 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
       ),
       body: Column(
         children: [
-          // 1. THE CALENDAR
           _buildCalendar(),
-
           const SizedBox(height: 20),
-
-          // 2. THE ACCURACY METER
           _buildAccuracyMeter(),
-
           const Spacer(),
-
-          // 3. BOTTOM ACTIONS
+          // ... your bottom buttons (Log Workout / Configure Routine) ...
           Padding(
             padding: const EdgeInsets.only(bottom: 30.0, left: 20, right: 20),
             child: Column(
               children: [
-                // The Main "Log Workout" Button
                 SizedBox(
                   width: double.infinity,
                   height: 55,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        final today = DateTime.now();
-                        final normalizedToday = DateTime(today.year, today.month, today.day);
-
-                        // Simple toggle logic (will replace with DB logic later)
-                        if (_isDayTrained(normalizedToday)) {
-                          _removeTrainingDay(normalizedToday);
-                        } else {
-                          _addTrainingDay(normalizedToday);
-                        }
-                      });
-                    },
+                    onPressed: () { /* Log logic */ },
                     icon: const Icon(Icons.fitness_center),
                     label: const Text("LOG WORKOUT TODAY"),
                     style: ElevatedButton.styleFrom(
@@ -103,10 +88,7 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 15),
-
-                // The "Configure Routine" Button
                 TextButton(
                   onPressed: () {
                     Navigator.push(
@@ -114,26 +96,19 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
                       MaterialPageRoute(builder: (context) => const RoutineSetupPage()),
                     );
                   },
-                  child: Text(
-                    "Configure Routine / Split",
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
+                  child: Text("Configure Routine / Split", style: TextStyle(color: Colors.grey[400], decoration: TextDecoration.underline)),
                 ),
               ],
             ),
-          ),
+          )
         ],
       ),
     );
   }
 
-  // --- WIDGET BUILDERS ---
+  // --- UPDATED CALENDAR WIDGET ---
 
   Widget _buildCalendar() {
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -152,30 +127,62 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
         lastDay: DateTime.utc(2030, 12, 31),
         focusedDay: _focusedDay,
         calendarFormat: CalendarFormat.month,
+        // We set rowHeight a bit larger to fit the text comfortably
+        rowHeight: 60,
 
-        // Styling the Calendar
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
           titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
-        calendarStyle: CalendarStyle(
-          // Style for days you trained
-          markerDecoration: BoxDecoration(
-            color: Theme.of(context).primaryColor,
-            shape: BoxShape.circle,
-          ),
-          todayDecoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.secondary.withOpacity(0.5),
-            shape: BoxShape.circle,
-          ),
-          selectedDecoration: BoxDecoration(
-            color: Theme.of(context).primaryColor,
-            shape: BoxShape.circle,
-          ),
+
+        // This removes the default styles because we are overriding them with builders
+        calendarStyle: const CalendarStyle(
+          outsideDaysVisible: false,
         ),
 
-        // Logic to mark dots on calendar
+        // --- THE MAGIC HAPPENS HERE ---
+        calendarBuilders: CalendarBuilders(
+
+          // 1. DEFAULT DAY BUILDER (Not selected, not today)
+          defaultBuilder: (context, day, focusedDay) {
+            return _buildCustomDayCell(day, textColor: Colors.white);
+          },
+
+          // 2. TODAY BUILDER
+          todayBuilder: (context, day, focusedDay) {
+            return _buildCustomDayCell(
+                day,
+                textColor: Theme.of(context).primaryColor,
+                borderColor: Theme.of(context).primaryColor.withOpacity(0.5)
+            );
+          },
+
+          // 3. SELECTED DAY BUILDER
+          selectedBuilder: (context, day, focusedDay) {
+            return _buildCustomDayCell(
+                day,
+                textColor: Colors.black, // Contrast for filled circle
+                backgroundColor: Theme.of(context).primaryColor
+            );
+          },
+
+          // 4. MARKER BUILDER (The dot if you trained)
+          singleMarkerBuilder: (context, day, event) {
+            // We can customize the dot position if needed,
+            // or return null to hide standard dots and handle it in the cell
+            return Container(
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+              ),
+              width: 6.0,
+              height: 6.0,
+              margin: const EdgeInsets.only(bottom: 45), // Move dot to top
+            );
+          },
+        ),
+
         eventLoader: (day) {
           return _isDayTrained(day) ? ['Trained'] : [];
         },
@@ -193,8 +200,90 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
     );
   }
 
-  Widget _buildAccuracyMeter() {
+  // --- CUSTOM CELL BUILDER ---
 
+  Widget _buildCustomDayCell(DateTime day, {
+    required Color textColor,
+    Color? backgroundColor,
+    Color? borderColor
+  }) {
+    // 1. Get the split name for this specific date
+    String splitName = _getSplitForDate(day);
+    bool isRestDay = splitName.toLowerCase() == 'rest';
+
+    return Container(
+      margin: const EdgeInsets.all(4.0),
+      decoration: BoxDecoration(
+        color: backgroundColor, // For selected state
+        shape: BoxShape.circle,
+        border: borderColor != null ? Border.all(color: borderColor, width: 2) : null,
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // The Date Number
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+
+            // The Split Name
+            const SizedBox(height: 2), // Tiny spacing
+            Text(
+              splitName,
+              style: TextStyle(
+                // Rest days get a green tint, others are dimmed grey
+                // (unless selected, then black)
+                color: backgroundColor != null
+                    ? Colors.black.withOpacity(0.7)
+                    : (isRestDay ? Colors.greenAccent : Colors.grey),
+                fontSize: 10, // Small font to fit
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.clip, // Clip if too long
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- LOGIC HELPER ---
+
+  String _getSplitForDate(DateTime date) {
+    if (_currentRoutine.isEmpty) return "";
+
+    // Normalize dates to ignore time (hours/minutes)
+    final DateTime normalizedDate = DateTime(date.year, date.month, date.day);
+
+    // Calculate difference in days from the Anchor Date
+    int daysDifference = normalizedDate.difference(_routineAnchorDate).inDays;
+
+    // Handle negative dates (if looking at calendar before anchor date)
+    if (daysDifference < 0) {
+      // Magic modulo math for negative numbers
+      int cycleLength = _currentRoutine.length;
+      int remainder = daysDifference % cycleLength;
+      daysDifference = (remainder == 0) ? 0 : (cycleLength + remainder);
+    }
+
+    // Modulo to find index in the routine list
+    int index = daysDifference % _currentRoutine.length;
+
+    // Abbreviate if name is too long (optional)
+    String name = _currentRoutine[index];
+    if (name.length > 6) return name.substring(0, 6); // Truncate
+
+    return name;
+  }
+
+  Widget _buildAccuracyMeter() {
     double accuracy = _calculateAccuracy();
 
     return Column(
@@ -229,6 +318,14 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
         ),
       ],
     );
+  }
+
+  // --- ACCURACY HELPERS ---
+
+  Color _getAccuracyColor(double percent) {
+    if (percent >= 0.8) return const Color(0xFFE65100); // Great (Orange)
+    if (percent >= 0.5) return const Color(0xFFFFB74D); // Okay (Light Orange)
+    return Colors.redAccent; // Needs work
   }
 
   // --- HELPERS & LOGIC ---
@@ -272,10 +369,5 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
 
     return (daysTrainedThisMonth / totalDaysPossible).clamp(0.0, 1.0);
   }
-
-  Color _getAccuracyColor(double percent) {
-    if (percent >= 0.8) return const Color(0xFFE65100); // Great (Orange)
-    if (percent >= 0.5) return const Color(0xFFFFB74D); // Okay (Light Orange)
-    return Colors.redAccent; // Needs work
-  }
+  
 }
