@@ -112,6 +112,9 @@ class _ProgressGalleryPageState extends State<ProgressGalleryPage>
       final String localPath = path.join(appDir.path, fileName);
 
       await File(image.path).copy(localPath);
+
+      await FileImage(File(localPath)).evict();
+
       await _progressBox.put(currentMonthKey, localPath);
 
       _loadImages();
