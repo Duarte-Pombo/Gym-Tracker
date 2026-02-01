@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class RoutineSetupPage extends StatefulWidget {
   const RoutineSetupPage({super.key});
@@ -8,14 +9,9 @@ class RoutineSetupPage extends StatefulWidget {
 }
 
 class _RoutineSetupPageState extends State<RoutineSetupPage> {
-  // The selected split type
-  String _selectedSplit = 'PPL'; // Default
-
-  // The actual cycle of days.
-  // We use this List to determine the sequence.
+  String _selectedSplit = 'PPL';
   List<String> _currentRoutine = ['Push', 'Pull', 'Legs', 'Rest'];
 
-  // Available tags for the Custom builder
   final List<String> _availableBlocks = [
     'Upper', 'Lower', 'Push', 'Pull', 'Legs',
     'Chest', 'Back', 'Arms', 'Shoulders',
@@ -67,33 +63,21 @@ class _RoutineSetupPageState extends State<RoutineSetupPage> {
 
               const Divider(height: 40, color: Colors.white24),
 
-              // CUSTOM BUILDER UI
+              // CUSTOM BUILDER
               if (_selectedSplit == 'Custom') ...[
                 _buildHeader("Build Your Cycle"),
-                const Text(
-                  "Tap tags to add them to your rotation loop.",
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
-                ),
+                const Text("Tap tags to add to rotation loop:", style: TextStyle(color: Colors.grey, fontSize: 12)),
                 const SizedBox(height: 15),
 
                 Wrap(
-                  spacing: 8.0,
-                  runSpacing: 8.0,
+                  spacing: 8.0, runSpacing: 8.0,
                   children: _availableBlocks.map((block) {
                     return ActionChip(
                       label: Text(block),
-                      backgroundColor: block == 'Rest'
-                          ? Colors.green.withOpacity(0.2)
-                          : Theme.of(context).colorScheme.surface,
-                      side: BorderSide(
-                          color: block == 'Rest'
-                              ? Colors.green
-                              : Theme.of(context).primaryColor.withOpacity(0.5)
-                      ),
+                      backgroundColor: block == 'Rest' ? Colors.green.withOpacity(0.2) : Theme.of(context).colorScheme.surface,
+                      side: BorderSide(color: block == 'Rest' ? Colors.green : Theme.of(context).primaryColor.withOpacity(0.5)),
                       onPressed: () {
-                        setState(() {
-                          _currentRoutine.add(block);
-                        });
+                        setState(() { _currentRoutine.add(block); });
                       },
                     );
                   }).toList(),
@@ -116,10 +100,8 @@ class _RoutineSetupPageState extends State<RoutineSetupPage> {
                     physics: const NeverScrollableScrollPhysics(),
                     onReorder: (oldIndex, newIndex) {
                       setState(() {
-                        if (oldIndex < newIndex) {
-                          newIndex -= 1;
-                        }
-                        final String item = _currentRoutine.removeAt(oldIndex);
+                        if (oldIndex < newIndex) newIndex -= 1;
+                        final item = _currentRoutine.removeAt(oldIndex);
                         _currentRoutine.insert(newIndex, item);
                       });
                     },
@@ -127,21 +109,10 @@ class _RoutineSetupPageState extends State<RoutineSetupPage> {
                       for (int i = 0; i < _currentRoutine.length; i++)
                         ListTile(
                           key: ValueKey('item_$i'),
-                          title: Text(
-                            "${i + 1}. ${_currentRoutine[i]}",
-                            style: TextStyle(
-                                color: _currentRoutine[i] == 'Rest'
-                                    ? Colors.greenAccent
-                                    : Colors.white
-                            ),
-                          ),
+                          title: Text("${i + 1}. ${_currentRoutine[i]}", style: TextStyle(color: _currentRoutine[i] == 'Rest' ? Colors.greenAccent : Colors.white)),
                           trailing: IconButton(
                             icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent),
-                            onPressed: () {
-                              setState(() {
-                                _currentRoutine.removeAt(i);
-                              });
-                            },
+                            onPressed: () { setState(() { _currentRoutine.removeAt(i); }); },
                           ),
                         ),
                     ],
@@ -149,62 +120,54 @@ class _RoutineSetupPageState extends State<RoutineSetupPage> {
                 ),
               ],
 
-              // --- CHANGED: SAVE BUTTON IS NOW HERE IN THE SCROLL VIEW ---
+              // --- SAVE BUTTON AT THE BOTTOM ---
               const SizedBox(height: 40),
-
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton.icon(
                   onPressed: () {
-                    // TODO: Save this to local storage (Hive)
+                    if (_currentRoutine.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add at least one day to the routine")));
+                      return;
+                    }
+
+                    // SAVE TO HIVE
+                    var box = Hive.box('settingsBox');
+                    box.put('currentRoutine', _currentRoutine);
+                    // Reset anchor date to today so the cycle matches up
+                    box.put('anchorDate', DateTime.now());
+
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("Routine set: ${_currentRoutine.join(" - ")}"))
-                    );
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Routine saved! Cycle starts today.")));
                   },
                   icon: const Icon(Icons.check),
                   label: const Text("SAVE ROUTINE"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
-                    elevation: 5,
                   ),
                 ),
               ),
-              // Add extra padding at the very bottom so it doesn't touch the screen edge
               const SizedBox(height: 30),
             ],
           ),
         ),
       ),
-      // No FloatingActionButton
     );
   }
 
-  // Helper for Headers
   Widget _buildHeader(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15.0),
       child: Text(
         text.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-          color: Colors.grey,
-        ),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: Colors.grey),
       ),
     );
   }
 
-  // Helper for Radio Tiles
-  Widget _buildRadioTile({
-    required String title,
-    required String subtitle,
-    required String value,
-    required List<String> routine,
-  }) {
+  Widget _buildRadioTile({required String title, required String subtitle, required String value, required List<String> routine}) {
     return RadioListTile<String>(
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
@@ -218,8 +181,6 @@ class _RoutineSetupPageState extends State<RoutineSetupPage> {
           if (val != 'Custom') {
             _currentRoutine = List.from(routine);
           } else {
-            // When switching to custom, we can either clear it or keep the last one.
-            // Let's clear it to avoid confusion, or set a default base.
             _currentRoutine = [];
           }
         });
