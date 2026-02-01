@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'routine_page.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 
@@ -71,28 +72,59 @@ class _GymTrackerHomeState extends State<GymTrackerHome> {
 
           const Spacer(),
 
-          // Temporary Button to toggle today as trained
+          // 3. BOTTOM ACTIONS
           Padding(
-            padding: const EdgeInsets.only(bottom: 40.0),
-            child: FloatingActionButton.extended(
-              onPressed: () {
-                setState(() {
-                  final today = DateTime.now();
-                  final normalizedToday = DateTime(today.year, today.month, today.day);
+            padding: const EdgeInsets.only(bottom: 30.0, left: 20, right: 20),
+            child: Column(
+              children: [
+                // The Main "Log Workout" Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        final today = DateTime.now();
+                        final normalizedToday = DateTime(today.year, today.month, today.day);
 
-                  // Simple toggle logic for demo purposes
-                  if (_isDayTrained(normalizedToday)) {
-                    _removeTrainingDay(normalizedToday);
-                  } else {
-                    _addTrainingDay(normalizedToday);
-                  }
-                });
-              },
-              icon: const Icon(Icons.fitness_center),
-              label: const Text("Log Workout"),
-              backgroundColor: Theme.of(context).primaryColor,
+                        // Simple toggle logic (will replace with DB logic later)
+                        if (_isDayTrained(normalizedToday)) {
+                          _removeTrainingDay(normalizedToday);
+                        } else {
+                          _addTrainingDay(normalizedToday);
+                        }
+                      });
+                    },
+                    icon: const Icon(Icons.fitness_center),
+                    label: const Text("LOG WORKOUT TODAY"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                // The "Configure Routine" Button
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const RoutineSetupPage()),
+                    );
+                  },
+                  child: Text(
+                    "Configure Routine / Split",
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          )
+          ),
         ],
       ),
     );
