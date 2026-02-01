@@ -4,9 +4,10 @@ import 'progress_gallery_page.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'routine_page.dart';
-import 'calorie_page.dart'; // Import the new page
+import 'calorie_page.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
 
   await Hive.openBox('settingsBox');
@@ -35,6 +36,7 @@ class GymTrackerApp extends StatelessWidget {
           surface: Color(0xFF2C2927),
         ),
         useMaterial3: true,
+        fontFamily: 'SF Pro Display',
       ),
       home: const GymTrackerHome(),
     );
@@ -48,7 +50,7 @@ class GymTrackerHome extends StatefulWidget {
   State<GymTrackerHome> createState() => _GymTrackerHomeState();
 }
 
-class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProviderStateMixin {
+class _GymTrackerHomeState extends State<GymTrackerHome> with TickerProviderStateMixin {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
@@ -61,61 +63,138 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
   List<String> _currentRoutine = [];
   DateTime _routineAnchorDate = DateTime.now();
 
-  // Animation for Streak Fire
-  late AnimationController _animController;
+  // Animations
+  late AnimationController _streakAnimController;
   late Animation<double> _scaleAnimation;
+  late AnimationController _fadeAnimController;
+  late Animation<double> _fadeAnimation;
+  late AnimationController _buttonPressController;
 
   @override
   void initState() {
     super.initState();
     _loadRoutineData();
 
-    // Pulse animation for the fire streak
-    _animController = AnimationController(
+    // Streak pulse animation
+    _streakAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 1),
+      duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _streakAnimController, curve: Curves.easeInOut),
+    );
+
+    // Fade in animation for dashboard
+    _fadeAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeAnimController, curve: Curves.easeOut),
+    );
+    _fadeAnimController.forward();
+
+    // Button press animation
+    _buttonPressController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
     );
   }
 
   @override
   void dispose() {
-    _animController.dispose();
+    _streakAnimController.dispose();
+    _fadeAnimController.dispose();
+    _buttonPressController.dispose();
     super.dispose();
   }
 
   void _loadRoutineData() {
     setState(() {
       _currentRoutine = _settingsBox.get('currentRoutine', defaultValue: <String>[])?.cast<String>() ?? [];
-      _routineAnchorDate = _settingsBox.get('anchorDate', defaultValue: DateTime.now());
+
+      // Bug fix: Properly handle DateTime from Hive
+      var anchorData = _settingsBox.get('anchorDate');
+      if (anchorData is DateTime) {
+        _routineAnchorDate = anchorData;
+      } else {
+        _routineAnchorDate = DateTime.now();
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          const SizedBox(height: 10),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              const Color(0xFF1E1C1A),
+              const Color(0xFF2C2927).withOpacity(0.5),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
 
-          // 1. DASHBOARD HEADER (Streak - Frequency - Calories)
-          _buildDashboardRow(),
+              // App Title with subtle animation
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 4,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        "PROGRESS",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
-          const SizedBox(height: 25),
+              const SizedBox(height: 30),
 
-          // 2. CALENDAR
-          Expanded(child: _buildCalendar()),
+              // Dashboard with staggered fade-in
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: _buildDashboardRow(),
+              ),
 
-          // 3. BOTTOM ACTION BUTTONS
-          _buildBottomActions(),
-        ],
+              const SizedBox(height: 25),
+
+              // Calendar
+              Expanded(
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: _buildCalendar(),
+                ),
+              ),
+
+              // Bottom Actions
+              _buildBottomActions(),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -126,60 +205,150 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // LEFT: STREAK
           Expanded(child: _buildStreakWidget()),
-
-          // CENTER: FREQUENCY (Accuracy)
+          const SizedBox(width: 15),
           _buildAccuracyWidget(),
-
-          // RIGHT: CALORIES
+          const SizedBox(width: 15),
           Expanded(child: _buildCalorieSummaryWidget()),
         ],
       ),
     );
   }
 
-  // --- WIDGETS ---
-
   Widget _buildStreakWidget() {
     int streak = _calculateStreak();
-    return Column(
-      children: [
-        AnimatedBuilder(
-          animation: _animController,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: const Icon(Icons.local_fire_department, color: Colors.orangeAccent, size: 36),
-            );
-          },
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF2C2927),
+            const Color(0xFF2C2927).withOpacity(0.6),
+          ],
         ),
-        const SizedBox(height: 5),
-        Text("$streak Day Streak", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
-      ],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.05),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          AnimatedBuilder(
+            animation: _streakAnimController,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _scaleAnimation.value,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        Colors.orangeAccent.withOpacity(0.3),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.local_fire_department,
+                    color: Colors.orangeAccent,
+                    size: 36,
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "$streak",
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const Text(
+            "DAY STREAK",
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+              color: Colors.white54,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildAccuracyWidget() {
     double accuracy = _calculateAccuracy();
-    return CircularPercentIndicator(
-      radius: 65.0,
-      lineWidth: 10.0,
-      animation: true,
-      percent: accuracy,
-      center: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            "${(accuracy * 100).toStringAsFixed(0)}%",
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22.0, color: Colors.white),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF2C2927),
+            const Color(0xFF2C2927).withOpacity(0.6),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.05),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          const Text("Freq.", style: TextStyle(fontSize: 10, color: Colors.grey)),
         ],
       ),
-      circularStrokeCap: CircularStrokeCap.round,
-      progressColor: _getAccuracyColor(accuracy),
-      backgroundColor: Colors.grey[800]!,
+      child: CircularPercentIndicator(
+        radius: 60.0,
+        lineWidth: 8.0,
+        animation: true,
+        animationDuration: 1200,
+        percent: accuracy,
+        center: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              "${(accuracy * 100).toStringAsFixed(0)}%",
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 24.0,
+                color: Colors.white,
+              ),
+            ),
+            const Text(
+              "FREQ.",
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+                color: Colors.white54,
+              ),
+            ),
+          ],
+        ),
+        circularStrokeCap: CircularStrokeCap.round,
+        progressColor: _getAccuracyColor(accuracy),
+        backgroundColor: Colors.grey[900]!,
+      ),
     );
   }
 
@@ -195,79 +364,230 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
           context,
           MaterialPageRoute(builder: (context) => const CaloriePage()),
         );
-        setState(() {}); // Refresh when returning
+        setState(() {});
       },
-      child: Column(
-        children: [
-          const Icon(Icons.pie_chart, color: Colors.greenAccent, size: 36),
-          const SizedBox(height: 5),
-          Text("$calories / $goal", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
-          const Text("kcal", style: TextStyle(fontSize: 10, color: Colors.grey)),
-        ],
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF2C2927),
+              const Color(0xFF2C2927).withOpacity(0.6),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withOpacity(0.05),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.greenAccent.withOpacity(0.2),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+              child: const Icon(
+                Icons.restaurant,
+                color: Colors.greenAccent,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "$calories",
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            Text(
+              "/ $goal KCAL",
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1,
+                color: Colors.white54,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildBottomActions() {
+    bool isLogged = _isDayTrained(DateTime.now());
+
     return Container(
-      padding: const EdgeInsets.only(bottom: 30.0, left: 20, right: 20, top: 20),
+      padding: const EdgeInsets.only(bottom: 30.0, left: 20, right: 20, top: 25),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        color: const Color(0xFF2C2927),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.5),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
       ),
       child: Column(
         children: [
-          SizedBox(
-            width: double.infinity,
-            height: 55,
-            child: ElevatedButton.icon(
-              onPressed: () => _toggleTrainingDay(DateTime.now()),
-              icon: const Icon(Icons.fitness_center),
-              label: Text(_isDayTrained(DateTime.now()) ? "UN-LOG WORKOUT" : "LOG WORKOUT"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isDayTrained(DateTime.now()) ? Colors.grey : Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
+          // Main Log Button
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: () {
+                  _buttonPressController.forward().then((_) {
+                    _buttonPressController.reverse();
+                  });
+                  _toggleTrainingDay(DateTime.now());
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isLogged
+                      ? Colors.grey[700]
+                      : Theme.of(context).primaryColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isLogged ? Icons.check_circle : Icons.fitness_center,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      isLogged ? "WORKOUT LOGGED" : "LOG WORKOUT",
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
 
-          const SizedBox(height: 15),
+          const SizedBox(height: 12),
 
-          // --- NEW GALLERY BUTTON ---
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ProgressGalleryPage()),
-                );
-              },
-              icon: const Icon(Icons.photo_library),
-              label: const Text("PROGRESS GALLERY"),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white24),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ProgressGalleryPage(),
+                        ),
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.photo_library, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "GALLERY",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-          // --------------------------
-
-          const SizedBox(height: 15),
-
-          TextButton(
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const RoutineSetupPage()),
-              );
-              _loadRoutineData();
-            },
-            child: Text(
-              "Configure Split",
-              style: TextStyle(color: Colors.grey[400], decoration: TextDecoration.underline),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const RoutineSetupPage(),
+                        ),
+                      );
+                      _loadRoutineData();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withOpacity(0.2),
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.edit_calendar, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "ROUTINE",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -277,23 +597,72 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
   Widget _buildCalendar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF2C2927),
+            const Color(0xFF2C2927).withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(25),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.05),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
       child: TableCalendar(
         firstDay: DateTime.utc(2020, 1, 1),
         lastDay: DateTime.utc(2030, 12, 31),
         focusedDay: _focusedDay,
         calendarFormat: CalendarFormat.month,
-        rowHeight: 55,
+        rowHeight: 58,
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
-          titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          titleTextStyle: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        daysOfWeekStyle: DaysOfWeekStyle(
+          weekdayStyle: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
+          weekendStyle: TextStyle(
+            color: Colors.white.withOpacity(0.6),
+            fontWeight: FontWeight.w600,
+            fontSize: 11,
+          ),
         ),
         calendarStyle: const CalendarStyle(outsideDaysVisible: false),
         calendarBuilders: CalendarBuilders(
-          defaultBuilder: (context, day, focusedDay) => _buildCustomDayCell(day, textColor: Colors.white),
-          todayBuilder: (context, day, focusedDay) => _buildCustomDayCell(day, textColor: Theme.of(context).primaryColor, borderColor: Theme.of(context).primaryColor.withOpacity(0.5)),
-          selectedBuilder: (context, day, focusedDay) => _buildCustomDayCell(day, textColor: Colors.black, backgroundColor: Theme.of(context).primaryColor),
-          singleMarkerBuilder: (context, day, event) => const SizedBox.shrink(), // Hide default dots
+          defaultBuilder: (context, day, focusedDay) =>
+              _buildCustomDayCell(day, textColor: Colors.white),
+          todayBuilder: (context, day, focusedDay) =>
+              _buildCustomDayCell(
+                day,
+                textColor: Theme.of(context).primaryColor,
+                borderColor: Theme.of(context).primaryColor,
+              ),
+          selectedBuilder: (context, day, focusedDay) =>
+              _buildCustomDayCell(
+                day,
+                textColor: Colors.black,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
         ),
         selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
         onDaySelected: (selectedDay, focusedDay) {
@@ -302,43 +671,66 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
             _focusedDay = focusedDay;
           });
         },
-        onPageChanged: (focusedDay) => _focusedDay = focusedDay,
+        onPageChanged: (focusedDay) {
+          setState(() {
+            _focusedDay = focusedDay;
+          });
+        },
       ),
     );
   }
 
-  Widget _buildCustomDayCell(DateTime day, {required Color textColor, Color? backgroundColor, Color? borderColor}) {
+  Widget _buildCustomDayCell(
+      DateTime day, {
+        required Color textColor,
+        Color? backgroundColor,
+        Color? borderColor,
+      }) {
     String splitName = _getSplitForDate(day);
     bool isRestDay = splitName.toLowerCase() == 'rest';
     bool isTrained = _isDayTrained(day);
 
-    // If day is trained, override background (unless it's selected, we keep selection visible)
     if (isTrained && backgroundColor == null) {
-      backgroundColor = Colors.white10;
-      borderColor = Colors.green;
+      backgroundColor = Theme.of(context).primaryColor.withOpacity(0.15);
+      borderColor = Theme.of(context).primaryColor.withOpacity(0.6);
     }
 
-    return Container(
-      margin: const EdgeInsets.all(4.0),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.all(3.0),
       decoration: BoxDecoration(
         color: backgroundColor,
         shape: BoxShape.circle,
-        border: borderColor != null ? Border.all(color: borderColor, width: 2) : null,
+        border: borderColor != null
+            ? Border.all(color: borderColor, width: 2)
+            : null,
       ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('${day.day}', style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
             if (splitName.isNotEmpty)
-              Text(
-                splitName,
-                style: TextStyle(
-                  color: isRestDay ? Colors.greenAccent : Colors.grey,
-                  fontSize: 8,
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  splitName,
+                  style: TextStyle(
+                    color: isRestDay ? Colors.greenAccent : Colors.grey[600],
+                    fontSize: 7,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.clip,
               ),
           ],
         ),
@@ -351,7 +743,11 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
   String _getSplitForDate(DateTime date) {
     if (_currentRoutine.isEmpty) return "";
     final DateTime normalizedDate = DateTime(date.year, date.month, date.day);
-    final DateTime normalizedAnchor = DateTime(_routineAnchorDate.year, _routineAnchorDate.month, _routineAnchorDate.day);
+    final DateTime normalizedAnchor = DateTime(
+      _routineAnchorDate.year,
+      _routineAnchorDate.month,
+      _routineAnchorDate.day,
+    );
     int daysDifference = normalizedDate.difference(normalizedAnchor).inDays;
 
     if (daysDifference < 0) {
@@ -398,13 +794,11 @@ class _GymTrackerHomeState extends State<GymTrackerHome> with SingleTickerProvid
     return Colors.redAccent;
   }
 
-  // Counts consecutive days going backwards from today/yesterday
   int _calculateStreak() {
     DateTime checkDate = DateTime.now();
     int streak = 0;
 
-    // If we haven't trained today yet, start checking from yesterday
-    // But if we HAVE trained today, include it.
+    // Start from today if trained, otherwise yesterday
     if (!_isDayTrained(checkDate)) {
       checkDate = checkDate.subtract(const Duration(days: 1));
     }
